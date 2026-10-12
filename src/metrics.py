@@ -90,7 +90,7 @@ def compute_metrics(tg: pd.DataFrame) -> pd.DataFrame:
     tg = tg.merge(opp, on=["game_id", "opponent"], how="left", validate="m:1")
 
     # Opponent-adjusted margin: how much better or worse than the opponent's usual margin.
-    tg["adj_margin"] = tg["margin"] - tg["opp_prior_avg_margin"].fillna(0)
+    tg["adj_margin"] = tg["margin"] + tg["opp_prior_avg_margin"].fillna(0)
 
     # Rolling metrics over the last WINDOW games (fewer at the start of a season).
     by_team = tg.groupby(["season", "team"], sort=False)
