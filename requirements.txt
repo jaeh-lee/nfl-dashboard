@@ -2,4 +2,5 @@ nflreadpy
 pandas
 pyarrow
 polars
+plotly
 streamlit

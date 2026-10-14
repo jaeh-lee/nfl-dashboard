@@ -2,5 +2,4 @@
 ipykernel
 matplotlib
 ipywidgets
-plotly
 nbformat
