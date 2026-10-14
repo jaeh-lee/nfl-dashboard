@@ -1,0 +1,51 @@
+name: Refresh data
+
+on:
+  schedule:
+    # 14:17 UTC on Monday (1), Tuesday (2) and Friday (5). GitHub cron uses UTC.
+    - cron: "17 14 * * 1,2,5"
+  workflow_dispatch:   # adds a manual "Run workflow" button on the Actions tab
+
+# The job pushes a commit, so the built-in token needs write access to the repo contents.
+permissions:
+  contents: write
+
+# Never run two refreshes at once. A second run waits for the first to finish.
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip          # reuses downloaded packages between runs
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Load games and team stats into the database
+        run: python -m src.load
+
+      - name: Recompute trend metrics
+        run: python -m src.metrics
+
+      - name: Commit the updated database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/nfl.db
+          if git diff --cached --quiet; then
+            echo "No database changes to commit."
+          else
+            git commit -m "Refresh data $(date -u +%Y-%m-%d)"
+            git push
+          fi
