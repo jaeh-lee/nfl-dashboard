@@ -7,7 +7,7 @@ import nflreadpy as nfl
 import pandas as pd
 import polars as pl
 
-SEASONS = [2025, 2026]
+SEASONS = [2021, 2022, 2023, 2024, 2025, 2026]
 
 # Columns the notebook and the Step 3 check rely on.
 COLUMNS = [
