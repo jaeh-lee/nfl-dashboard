@@ -37,6 +37,11 @@ def load_team_stats_pl(seasons: list[int] = SEASONS) -> pl.DataFrame:
     df = nfl.load_team_stats(seasons=seasons)
     return df.drop([c for c in TEAM_STATS_DROP if c in df.columns])
 
+def load_teams_pl() -> pl.DataFrame:
+    """Team reference data: abbreviation, full name, nickname, conference and division."""
+    df = nfl.load_teams()
+    keep = ["team_abbr", "team_name", "team_nick", "team_conf", "team_division"]
+    return df.select([c for c in keep if c in df.columns])
 
 def fetch_schedules(seasons: list[int] = SEASONS) -> pd.DataFrame:
     """Return schedules and results for the given seasons as a pandas DataFrame (10 columns)."""

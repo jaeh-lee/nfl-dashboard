@@ -6,14 +6,14 @@ update existing rows instead of duplicating them.
 """
 
 from src.db import DB_PATH, ensure_table, get_connection, quote, upsert_df
-from src.fetch import SEASONS, load_schedules_pl, load_team_stats_pl
+from src.fetch import SEASONS, load_schedules_pl, load_team_stats_pl, load_teams_pl
 
 # (table name, loader, primary key columns)
 TABLES = [
     ("games", load_schedules_pl, ["game_id"]),
     ("team_game_stats", load_team_stats_pl, ["game_id", "team"]),
+    ("teams", load_teams_pl, ["team_abbr"]),
 ]
-
 
 def count_rows(conn, table: str) -> int:
     return conn.execute(f"SELECT COUNT(*) FROM {quote(table)}").fetchone()[0]
