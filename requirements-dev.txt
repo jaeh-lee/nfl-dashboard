@@ -3,3 +3,4 @@ ipykernel
 matplotlib
 ipywidgets
 nbformat
+scikit-learn

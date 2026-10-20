@@ -2,7 +2,7 @@ name: Refresh data
 
 on:
   schedule:
-    # 14:17 UTC on Monday (1), Tuesday (2) and Friday (5). GitHub cron uses UTC.
+    # 14:17 UTC (9:17 AM EST) on Monday (1), Tuesday (2) and Friday (5). GitHub cron uses UTC.
     - cron: "17 14 * * 1,2,5"
   workflow_dispatch:   # adds a manual "Run workflow" button on the Actions tab
 
