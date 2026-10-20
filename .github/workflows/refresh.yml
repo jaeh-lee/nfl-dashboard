@@ -37,6 +37,9 @@ jobs:
 
       - name: Recompute trend metrics
         run: python -m src.metrics
+      
+      - name: Build game features
+        run: python -m src.features
 
       - name: Commit the updated database
         run: |
