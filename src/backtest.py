@@ -1,4 +1,4 @@
-"""Phase 2: walk-forward backtest for home win probability and game margin (the spread).
+"""Phase 2: walk-forward backtest for home win probability, game margin (the spread) and total points.
 
 Run from the repo root:  python -m src.backtest
                          python -m src.backtest --start-season 2024
@@ -30,6 +30,14 @@ MIN_TRAIN_GAMES = 200    # skip a week if fewer earlier games than this are avai
 FEATURES = ["diff_season_win_pct", "diff_pythag_win_pct", "diff_roll_win_pct", "diff_roll_margin",
             "diff_roll_adj_margin", "rest_diff", "div_game"]
 ONE_FEATURE = ["diff_pythag_win_pct"]   # the one-feature baseline model
+
+# Scoring features: points scored and allowed, as home minus away differences.
+FEATURES_PTS = FEATURES + ["diff_roll_pf", "diff_roll_pa", "diff_season_ppg_for", "diff_season_ppg_against"]
+
+# Total points: both teams' scoring combined, plus the expected total from offense against defense.
+TOTAL_FEATURES = ["sum_roll_pf", "sum_roll_pa", "sum_season_ppg_for", "sum_season_ppg_against",
+                  "exp_total_roll", "exp_total_season"]
+TOTAL_ONE_FEATURE = ["exp_total_season"]
 
 
 # ---------------------------------------------------------------- data
@@ -65,6 +73,10 @@ def winner_models() -> dict:
         "gradient_boosting": (FEATURES, lambda: HistGradientBoostingClassifier(
             max_depth=3, learning_rate=0.05, max_iter=150, min_samples_leaf=30,
             l2_regularization=1.0, random_state=0)),
+        "logistic_points": (FEATURES_PTS, lambda: make_pipeline(StandardScaler(), LogisticRegression())),
+        "gradient_boosting_points": (FEATURES_PTS, lambda: HistGradientBoostingClassifier(
+            max_depth=3, learning_rate=0.05, max_iter=150, min_samples_leaf=30,
+            l2_regularization=1.0, random_state=0)),
     }
 
 
@@ -77,6 +89,22 @@ def margin_models() -> dict:
         "gradient_boosting": (FEATURES, lambda: HistGradientBoostingRegressor(
             max_depth=3, learning_rate=0.05, max_iter=150, min_samples_leaf=30,
             l2_regularization=1.0, random_state=0)),
+        "ridge_points": (FEATURES_PTS, lambda: make_pipeline(StandardScaler(), RidgeCV(alphas=alphas))),
+        "gradient_boosting_points": (FEATURES_PTS, lambda: HistGradientBoostingRegressor(
+            max_depth=3, learning_rate=0.05, max_iter=150, min_samples_leaf=30,
+            l2_regularization=1.0, random_state=0)),
+    }
+
+
+def total_models() -> dict:
+    """Total points (home plus away) models."""
+    alphas = [1.0, 10.0, 100.0, 1000.0]
+    return {
+        "ridge_expected_total_only": (TOTAL_ONE_FEATURE, lambda: make_pipeline(StandardScaler(), RidgeCV(alphas=alphas))),
+        "ridge": (TOTAL_FEATURES, lambda: make_pipeline(StandardScaler(), RidgeCV(alphas=alphas))),
+        "gradient_boosting": (TOTAL_FEATURES, lambda: HistGradientBoostingRegressor(
+            max_depth=3, learning_rate=0.05, max_iter=150, min_samples_leaf=30,
+            l2_regularization=1.0, random_state=0)),
     }
 
 
@@ -85,7 +113,7 @@ def margin_models() -> dict:
 def walk_forward(df: pd.DataFrame, start_season: int) -> pd.DataFrame:
     """Train on earlier weeks and predict each week from start_season on. Returns long predictions."""
     out = []
-    w_models, m_models = winner_models(), margin_models()
+    w_models, m_models, t_models = winner_models(), margin_models(), total_models()
     keys = sorted(k for k in df["key"].unique() if k // 100 >= start_season)
 
     for k in keys:
@@ -118,6 +146,15 @@ def walk_forward(df: pd.DataFrame, start_season: int) -> pd.DataFrame:
         for name, p in preds.items():
             out.append(pd.DataFrame({**base, "target": "margin", "model": name, "prediction": p, "actual": actual}))
 
+        # Total points.
+        actual = test["total"].values
+        preds = {"baseline_mean_total": np.full(len(test), train["total"].mean()),
+                 "market": test["market_total"].values}
+        for name, (cols, make) in t_models.items():
+            preds[name] = make().fit(train[cols], train["total"]).predict(test[cols])
+        for name, p in preds.items():
+            out.append(pd.DataFrame({**base, "target": "total", "model": name, "prediction": p, "actual": actual}))
+
     return pd.concat(out, ignore_index=True)
 
 
@@ -140,6 +177,7 @@ def per_game_loss(preds: pd.DataFrame, target: str) -> pd.DataFrame:
 def summarize(preds: pd.DataFrame, target: str) -> pd.DataFrame:
     """Scores per model on the games where every model has a prediction, with a comparison to the market."""
     d = per_game_loss(preds, target)
+    d = d.dropna(subset=["loss"])   # for example a game with no betting line
     counts = d.groupby("game_id")["model"].nunique()
     d = d[d["game_id"].isin(counts[counts == counts.max()].index)]   # same games for every model
 
@@ -192,6 +230,11 @@ def main() -> None:
     print(summarize(preds, "margin").round(3).to_string())
     print("\nMAE by season:")
     print(by_season(preds, "margin").round(3).to_string())
+
+    print("\nTOTAL POINTS (lower MAE is better; vs_market below 0 beats the market)")
+    print(summarize(preds, "total").round(3).to_string())
+    print("\nMAE by season:")
+    print(by_season(preds, "total").round(3).to_string())
 
     frame = pl.from_pandas(preds)
     ensure_table(conn, TABLE, frame, PRIMARY_KEY)

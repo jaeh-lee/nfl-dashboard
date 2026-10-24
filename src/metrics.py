@@ -103,9 +103,16 @@ def compute_metrics(tg: pd.DataFrame) -> pd.DataFrame:
     tg["roll_margin"] = rolling_mean("margin")
     tg["roll_adj_margin"] = rolling_mean("adj_margin")
 
+    # Scoring metrics: points scored and allowed, over the last WINDOW games and for the season so far.
+    tg["roll_pf"] = rolling_mean("points_for")
+    tg["roll_pa"] = rolling_mean("points_against")
+    tg["season_ppg_for"] = tg["cum_pf"] / tg["game_number"]
+    tg["season_ppg_against"] = tg["cum_pa"] / tg["game_number"]
+
     # Pre-game versions: the same metrics as of the previous game (NaN before a team's first game).
     by_team = tg.groupby(["season", "team"], sort=False)
-    for col in ["season_win_pct", "pythag_win_pct", "roll_win_pct", "roll_margin", "roll_adj_margin"]:
+    for col in ["season_win_pct", "pythag_win_pct", "roll_win_pct", "roll_margin", "roll_adj_margin",
+                "roll_pf", "roll_pa", "season_ppg_for", "season_ppg_against"]:
         tg["pre_" + col] = by_team[col].shift(1)
 
     keep = [
@@ -113,8 +120,10 @@ def compute_metrics(tg: pd.DataFrame) -> pd.DataFrame:
         "opponent", "points_for", "points_against", "margin", "win", "game_number", "games_before",
         "season_win_pct", "pythag_win_pct", "roll_games", "roll_win_pct", "roll_margin",
         "opp_prior_avg_margin", "adj_margin", "roll_adj_margin",
+        "roll_pf", "roll_pa", "season_ppg_for", "season_ppg_against",
         "pre_season_win_pct", "pre_pythag_win_pct", "pre_roll_win_pct", "pre_roll_margin",
-        "pre_roll_adj_margin",
+        "pre_roll_adj_margin", "pre_roll_pf", "pre_roll_pa", "pre_season_ppg_for",
+        "pre_season_ppg_against",
     ]
     return tg[keep]
 

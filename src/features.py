@@ -30,11 +30,16 @@ FEATURES = {
     "pre_roll_win_pct": "roll_win_pct",
     "pre_roll_margin": "roll_margin",
     "pre_roll_adj_margin": "roll_adj_margin",
+    "pre_roll_pf": "roll_pf",
+    "pre_roll_pa": "roll_pa",
+    "pre_season_ppg_for": "season_ppg_for",
+    "pre_season_ppg_against": "season_ppg_against",
 }
 # The same metrics measured after a game, used for upcoming games (latest value per team).
 AFTER = {"season_win_pct": "pre_season_win_pct", "pythag_win_pct": "pre_pythag_win_pct",
          "roll_win_pct": "pre_roll_win_pct", "roll_margin": "pre_roll_margin",
-         "roll_adj_margin": "pre_roll_adj_margin"}
+         "roll_adj_margin": "pre_roll_adj_margin", "roll_pf": "pre_roll_pf", "roll_pa": "pre_roll_pa",
+         "season_ppg_for": "pre_season_ppg_for", "season_ppg_against": "pre_season_ppg_against"}
 
 
 def read_games_for_features(conn) -> pd.DataFrame:
@@ -83,6 +88,15 @@ def build_features(games: pd.DataFrame, metrics: pd.DataFrame) -> pd.DataFrame:
     for short in FEATURES.values():
         out[f"diff_{short}"] = out[f"home_{short}"] - out[f"away_{short}"]
 
+    # Scoring features for the total: both teams' offense and defense together.
+    out["sum_roll_pf"] = out["home_roll_pf"] + out["away_roll_pf"]
+    out["sum_roll_pa"] = out["home_roll_pa"] + out["away_roll_pa"]
+    out["sum_season_ppg_for"] = out["home_season_ppg_for"] + out["away_season_ppg_for"]
+    out["sum_season_ppg_against"] = out["home_season_ppg_against"] + out["away_season_ppg_against"]
+    # Expected total: each team's scoring averaged with what its opponent usually allows.
+    out["exp_total_roll"] = (out["sum_roll_pf"] + out["sum_roll_pa"]) / 2
+    out["exp_total_season"] = (out["sum_season_ppg_for"] + out["sum_season_ppg_against"]) / 2
+
     # Schedule features.
     out["home_rest"] = g["home_rest"].values
     out["away_rest"] = g["away_rest"].values
@@ -111,8 +125,8 @@ def verify(games: pd.DataFrame, feats: pd.DataFrame, n: int = 400, seed: int = 0
     """Recompute some features from raw scores with plain loops. Returns (values checked, mismatches).
 
     For each sampled played game and side, only that team's games earlier in the same season are used.
-    Covers season win %, rolling win %, rolling margin and Pythagorean win %. Opponent-adjusted margin
-    was checked when the metrics were built.
+    Covers season win %, rolling win %, rolling margin, Pythagorean win % and the points scored and
+    allowed averages. Opponent-adjusted margin was checked when the metrics were built.
     """
     played = games[games["home_score"].notna() & games["away_score"].notna()]
     rows = []  # one raw row per team per game
@@ -137,6 +151,10 @@ def verify(games: pd.DataFrame, feats: pd.DataFrame, n: int = 400, seed: int = 0
                 "roll_win_pct": last_win.mean(),
                 "roll_margin": (last["pf"] - last["pa"]).mean(),
                 "pythag_win_pct": float(pythag(prior["pf"].sum(), prior["pa"].sum())),
+                "roll_pf": last["pf"].mean(),
+                "roll_pa": last["pa"].mean(),
+                "season_ppg_for": prior["pf"].mean(),
+                "season_ppg_against": prior["pa"].mean(),
             }
             for name, value in expected.items():
                 checked += 1
