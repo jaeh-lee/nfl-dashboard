@@ -22,6 +22,7 @@ TABLES = {
     "team_game_metrics": ["game_id", "team"],
     "game_features": ["game_id"],
     "backtest_predictions": ["game_id", "target", "model"],
+    "predictions": ["game_id", "target", "model"],
 }
 
 problems = 0
@@ -84,7 +85,7 @@ def main() -> None:
     report(same_day == 0, "a team playing twice on the same day", f"{same_day} found" if same_day else "")
 
     print("\n4. Rows that point at a missing game")
-    for table in ("team_game_stats", "team_game_metrics", "game_features", "backtest_predictions"):
+    for table in ("team_game_stats", "team_game_metrics", "game_features", "backtest_predictions", "predictions"):
         if table in existing:
             n = scalar(conn, f"""SELECT COUNT(*) FROM {quote(table)} t
                                  LEFT JOIN games g ON g.game_id = t.game_id WHERE g.game_id IS NULL""")

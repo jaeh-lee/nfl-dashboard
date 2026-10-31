@@ -26,3 +26,24 @@ def read_team_names(conn) -> dict[str, str]:
     except Exception:
         return {}
     return dict(zip(teams["team_abbr"], teams["team_name"]))
+
+
+def read_predictions(conn) -> pd.DataFrame:
+    """Stored model predictions with the betting lines for the same games.
+
+    One row per game, target and model. Returns an empty frame if the predictions table
+    does not exist yet, so the app shows a message instead of failing.
+    """
+    try:
+        return pd.read_sql_query(
+            """
+            SELECT p.game_id, p.target, p.model, p.prediction, p.season, p.week,
+                   p.train_games, p.trained_through,
+                   f.market_spread, f.market_total, f.market_home_moneyline, f.market_away_moneyline
+            FROM predictions p
+            JOIN game_features f ON f.game_id = p.game_id
+            """,
+            conn,
+        )
+    except Exception:
+        return pd.DataFrame()

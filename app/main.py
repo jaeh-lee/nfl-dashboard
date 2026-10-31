@@ -13,13 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from src.db import DB_PATH, get_connection
 from src.metrics import PYTH_EXP, WINDOW, read_metrics, season_summary
-from src.queries import read_games, read_team_names
+from src.queries import read_games, read_predictions, read_team_names
 
 st.set_page_config(page_title="NFL Dashboard", layout="wide")
 
@@ -31,10 +32,10 @@ SCOPES = {"Regular season": "regular", "Playoffs": "playoffs", "Both": "both"}
 
 @st.cache_data
 def load_all(db_mtime: float):
-    """Read metrics, all games and team names. db_mtime is only a cache key: when the file changes, re-read."""
+    """Read metrics, all games, team names and predictions. db_mtime is only a cache key: when the file changes, re-read."""
     conn = get_connection()
     try:
-        return read_metrics(conn), read_games(conn), read_team_names(conn)
+        return read_metrics(conn), read_games(conn), read_team_names(conn), read_predictions(conn)
     finally:
         conn.close()
 
@@ -67,6 +68,14 @@ def add_labels(d: pd.DataFrame) -> pd.DataFrame:
     d["score"] = d["points_for"].astype(str) + "-" + d["points_against"].astype(str)
     d["result"] = d["win"].map({1.0: "W", 0.5: "T", 0.0: "L"})
     return d
+
+
+def implied_home_prob(home_ml: pd.Series, away_ml: pd.Series) -> pd.Series:
+    """Market win probability for the home team from moneylines, with the bookmaker's margin removed."""
+    def raw(ml):
+        return np.where(ml < 0, -ml / (-ml + 100.0), 100.0 / (ml + 100.0))
+    h, a = raw(home_ml), raw(away_ml)
+    return pd.Series(h / (h + a), index=home_ml.index)
 
 
 # ---------------------------------------------------------------- chart helpers
@@ -262,6 +271,7 @@ def records_entering(season_games: pd.DataFrame):
     totals = {team: record_text(r.win, r.loss, r.tie) for team, r in sums.iterrows()}
     return before, totals
 
+
 # ---------------------------------------------------------------- load and sidebar
 
 if not DB_PATH.exists():
@@ -270,7 +280,7 @@ if not DB_PATH.exists():
     st.stop()
 
 try:
-    metrics, games, team_names = load_all(DB_PATH.stat().st_mtime)
+    metrics, games, team_names, predictions = load_all(DB_PATH.stat().st_mtime)
 except Exception as exc:  # for example, the metrics table has not been created yet
     st.error(f"Could not read the database tables ({exc}). Run `python -m src.load` and "
              "`python -m src.metrics` from the repo root.")
@@ -299,8 +309,8 @@ st.sidebar.caption(f"Latest game in data: {played_dates}")
 st.sidebar.caption(f"Rolling window: {WINDOW} games. Pythagorean exponent: {PYTH_EXP}. "
                    "Playoffs are wild card, divisional, conference and Super Bowl games.")
 
-tab_week, tab_standings, tab_trends, tab_log = st.tabs(
-    ["Weekly games", "Standings", "Team trends", "Game log"]
+tab_week, tab_pred, tab_standings, tab_trends, tab_log = st.tabs(
+    ["Weekly games", "Predictions", "Standings", "Team trends", "Game log"]
 )
 
 # ---------------------------------------------------------------- weekly games
@@ -377,6 +387,60 @@ with tab_week:
         st.caption("Records are regular season records (wins-losses, or wins-losses-ties) before that game. "
                    "Status reflects the last data refresh (Monday, Tuesday and Friday). A game that has "
                    "finished since then shows as not played yet until the next refresh.")
+
+# ---------------------------------------------------------------- predictions
+
+MODEL_NAMES = {"logistic": "logistic regression", "ridge": "ridge regression",
+               "ridge_expected_total_only": "ridge regression on the expected total"}
+
+with tab_pred:
+    if predictions.empty:
+        st.info("No predictions yet. They are created by `python -m src.predict`, which the refresh "
+                "workflow runs after each data update.")
+    else:
+        # The most recent week that has predictions (this season and filters do not apply here).
+        latest = predictions.sort_values(["season", "week"]).iloc[-1]
+        pw = predictions[(predictions["season"] == latest["season"]) & (predictions["week"] == latest["week"])]
+        week_games = games[(games["season"] == latest["season"]) & (games["week"] == latest["week"])]
+        st.subheader(f"{int(latest['season'])} {week_label(week_games, int(latest['week']))}: model vs market")
+
+        wide = pw.pivot_table(index="game_id", columns="target", values="prediction")
+        meta = pw.drop_duplicates("game_id").set_index("game_id").loc[wide.index]
+        g = games.set_index("game_id").loc[wide.index]
+        played = g["home_score"].notna() & g["away_score"].notna()
+
+        table = pd.DataFrame({
+            "Day": g["weekday"], "Date": g["gameday"], "Kickoff (ET)": g["gametime"],
+            "Away": g["away_team"].map(full), "Home": g["home_team"].map(full),
+            "Model: home win %": (wide["home_win"] * 100).round(1),
+            "Market: home win %": (implied_home_prob(meta["market_home_moneyline"],
+                                                      meta["market_away_moneyline"]) * 100).round(1),
+            "Model: margin": wide["margin"].round(1), "Market: spread": meta["market_spread"],
+            "Model: total": wide["total"].round(1), "Market: total": meta["market_total"],
+            "Final score (away-home)": [f"{int(a)}-{int(h)}" if p else "Not played yet"
+                                        for a, h, p in zip(g["away_score"].fillna(0), g["home_score"].fillna(0), played)],
+        }).sort_values(["Date", "Kickoff (ET)"])
+        st.dataframe(table, hide_index=True, width="stretch")
+
+        used = pw.drop_duplicates("target").set_index("target")
+        st.caption(
+            f"Win probability: {MODEL_NAMES.get(used.loc['home_win', 'model'], used.loc['home_win', 'model'])}. "
+            f"Margin: {MODEL_NAMES.get(used.loc['margin', 'model'], used.loc['margin', 'model'])}. "
+            f"Total: {MODEL_NAMES.get(used.loc['total', 'model'], used.loc['total', 'model'])}. "
+            f"Trained on {int(used.loc['home_win', 'train_games'])} completed regular season games through "
+            f"{used.loc['home_win', 'trained_through']}."
+        )
+        st.caption(
+            "Margin and spread are from the home team's side: a positive number means the home team is "
+            "favored or wins by that many points. The market win probability comes from the moneylines with "
+            "the bookmaker's margin removed."
+        )
+        st.caption(
+            "In the backtest the market was more accurate than every model on win probability, spread and "
+            "total, so read these as a comparison with the market and not as betting advice. Only the next "
+            "unplayed regular season week is predicted, and not the first weeks of a season, when teams have "
+            "too few games."
+        )
 
 # ---------------------------------------------------------------- standings
 
