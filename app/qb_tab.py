@@ -4,11 +4,17 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from defense_tab import defense_chart
+
 BLUE, RED, GRAY = "royalblue", "crimson", "gray"
 
 
-def render_qb_tab(qb_pred: pd.DataFrame, qb_games: pd.DataFrame, games: pd.DataFrame, full, week_label) -> None:
-    """Draw the tab. `full` turns a team code into a full name, and `week_label` names a week."""
+def render_qb_tab(qb_pred: pd.DataFrame, qb_games: pd.DataFrame, pass_def: pd.DataFrame, games: pd.DataFrame,
+                  full, week_label) -> None:
+    """Draw the tab. `full` turns a team code into a full name, and `week_label` names a week.
+
+    pass_def is the pass defense table, used to chart the opponent next to the quarterback.
+    """
     if qb_pred.empty:
         st.info("No quarterback projections yet. They are created by `python -m src.qb predict`, "
                 "which the refresh workflow runs after each data update.")
@@ -88,7 +94,16 @@ def render_qb_tab(qb_pred: pd.DataFrame, qb_games: pd.DataFrame, games: pd.DataF
                              marker=dict(symbol="diamond", size=11, color="black"), showlegend=False))
     fig.update_layout(title=f"{labels[pid]}: passing yards by game", height=420, yaxis_title="Passing yards",
                       legend=dict(orientation="h", yanchor="top", y=-0.25), margin=dict(t=60, b=40))
-    st.plotly_chart(fig, width="stretch")
+    # The QB's chart on the left and the opponent's pass defense, game by game, on the right.
+    left, right = st.columns(2)
+    left.plotly_chart(fig, width="stretch")
+    dd = pass_def[pass_def["season"] == row["season"]] if len(pass_def) else pass_def
+    if len(dd) and (dd["defense"] == row["opponent_team"]).any():
+        right.plotly_chart(
+            defense_chart(dd, row["opponent_team"], full,
+                          title=f"{full(row['opponent_team'])}: passing yards allowed by game"),
+            width="stretch")
     st.caption("Bars are the quarterback's passing yards. Diamonds are the passing yards that opponent allowed per "
                "game in its other games that season, so a bar above its diamond beat that defense's usual. "
-               "The red bar is the projection with its likely range.")
+               "The red bar is the projection with its likely range. On the right, the opponent's passing yards "
+               "allowed in each game, with red bars where it allowed more than that offense usually gets.")

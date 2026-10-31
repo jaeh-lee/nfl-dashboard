@@ -227,6 +227,31 @@ def summarize(preds: pd.DataFrame, baseline: str = "baseline_qb_recent") -> pd.D
                      f"mae_vs_{baseline}": diff.mean(), "plus_minus_95": 1.96 * diff.std(ddof=1) / np.sqrt(len(diff))})
     return pd.DataFrame(rows).set_index("model").sort_values("mae")
 
+def build_pass_defense(qbg: pd.DataFrame, games: pd.DataFrame, team: pd.DataFrame) -> pd.DataFrame:
+    """One row per defense per regular season game: what it allowed through the air and to whom.
+
+    offense_avg_other is what that offense gets per game in its other regular season games that season,
+    so vs_offense_avg shows whether the defense held the offense below (negative) or above (positive) its usual.
+    """
+    g = games[(games["game_type"] == "REG") & games["home_score"].notna() & games["away_score"].notna()]
+    t = team.merge(g[["game_id", "season", "week", "gameday", "home_team", "away_team"]], on="game_id")
+    t = t.rename(columns={"team": "offense"})
+    t["defense"] = np.where(t["offense"] == t["home_team"], t["away_team"], t["home_team"])
+    t["defense_location"] = np.where(t["defense"] == t["home_team"], "home", "away")
+    t["ypa"] = t["passing_yards"] / t["attempts"]
+
+    # The opposing quarterback: the one who threw the most passes for that offense in that game.
+    top = (qbg.sort_values("attempts").groupby(["game_id", "team"]).tail(1)[["game_id", "team", "player_name"]]
+           .rename(columns={"team": "offense", "player_name": "opposing_qb"}))
+    t = t.merge(top, on=["game_id", "offense"], how="left")
+
+    totals = t.groupby(["season", "offense"])["passing_yards"].agg(["sum", "count"])
+    t = t.merge(totals.rename(columns={"sum": "off_total", "count": "off_games"}),
+                left_on=["season", "offense"], right_index=True)
+    t["offense_avg_other"] = (t["off_total"] - t["passing_yards"]) / (t["off_games"] - 1).replace(0, np.nan)
+    t["vs_offense_avg"] = t["passing_yards"] - t["offense_avg_other"]
+    return t[["game_id", "defense", "offense", "season", "week", "gameday", "defense_location", "opposing_qb",
+              "attempts", "passing_yards", "ypa", "offense_avg_other", "vs_offense_avg"]]
 
 def read_inputs(conn):
     qbg = pd.read_sql_query("SELECT * FROM qb_game_stats", conn)
@@ -263,7 +288,8 @@ def cmd_backtest() -> None:
 
 def cmd_predict() -> None:
     conn = get_connection()
-    frame, final_def = build_frame(*read_inputs(conn))
+    inputs = read_inputs(conn)
+    frame, final_def = build_frame(*inputs)
     train = frame[(frame["upcoming"] == 0) & (frame["eligible"] == 1)]
     todo = frame[(frame["upcoming"] == 1) & (frame["eligible"] == 1)].copy()
 
@@ -274,6 +300,11 @@ def cmd_predict() -> None:
     gframe = pl.from_pandas(games_tbl)
     ensure_table(conn, "qb_games", gframe, ["game_id", "player_id"])
     upsert_df(conn, "qb_games", gframe, ["game_id", "player_id"])
+    
+    # Pass defense table: what every defense allowed in each game, for the Pass defense tab.
+    dframe = pl.from_pandas(build_pass_defense(*inputs))
+    ensure_table(conn, "pass_defense_games", dframe, ["game_id", "defense"])
+    upsert_df(conn, "pass_defense_games", dframe, ["game_id", "defense"])
 
     if todo.empty:
         print("No QB projections: no upcoming regular season game has an expected starter with enough history.")

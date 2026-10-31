@@ -62,3 +62,11 @@ def read_qb_games(conn) -> pd.DataFrame:
         return pd.read_sql_query("SELECT * FROM qb_games", conn)
     except Exception:
         return pd.DataFrame()
+
+
+def read_pass_defense(conn) -> pd.DataFrame:
+    """What every defense allowed through the air in each regular season game. Empty if missing."""
+    try:
+        return pd.read_sql_query("SELECT * FROM pass_defense_games", conn)
+    except Exception:
+        return pd.DataFrame()
