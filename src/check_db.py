@@ -23,6 +23,7 @@ TABLES = {
     "game_features": ["game_id"],
     "backtest_predictions": ["game_id", "target", "model"],
     "predictions": ["game_id", "target", "model"],
+    "qb_game_stats": ["game_id", "player_id"], "qb_games": ["game_id", "player_id"], "qb_predictions": ["game_id", "player_id"],
 }
 
 problems = 0

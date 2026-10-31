@@ -47,3 +47,18 @@ def read_predictions(conn) -> pd.DataFrame:
         )
     except Exception:
         return pd.DataFrame()
+
+def read_qb_predictions(conn) -> pd.DataFrame:
+    """Stored quarterback passing yard projections. Empty if the table does not exist yet."""
+    try:
+        return pd.read_sql_query("SELECT * FROM qb_predictions", conn)
+    except Exception:
+        return pd.DataFrame()
+
+
+def read_qb_games(conn) -> pd.DataFrame:
+    """Every quarterback start with the opponent's usual passing yards allowed. Empty if missing."""
+    try:
+        return pd.read_sql_query("SELECT * FROM qb_games", conn)
+    except Exception:
+        return pd.DataFrame()

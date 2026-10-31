@@ -18,9 +18,10 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from qb_tab import render_qb_tab
 from src.db import DB_PATH, get_connection
 from src.metrics import PYTH_EXP, WINDOW, read_metrics, season_summary
-from src.queries import read_games, read_predictions, read_team_names
+from src.queries import read_games, read_predictions, read_qb_games, read_qb_predictions, read_team_names
 
 st.set_page_config(page_title="NFL Dashboard", layout="wide")
 
@@ -35,7 +36,8 @@ def load_all(db_mtime: float):
     """Read metrics, all games, team names and predictions. db_mtime is only a cache key: when the file changes, re-read."""
     conn = get_connection()
     try:
-        return read_metrics(conn), read_games(conn), read_team_names(conn), read_predictions(conn)
+        return (read_metrics(conn), read_games(conn), read_team_names(conn), read_predictions(conn),
+                read_qb_predictions(conn), read_qb_games(conn))
     finally:
         conn.close()
 
@@ -280,7 +282,7 @@ if not DB_PATH.exists():
     st.stop()
 
 try:
-    metrics, games, team_names, predictions = load_all(DB_PATH.stat().st_mtime)
+    metrics, games, team_names, predictions, qb_pred, qb_games = load_all(DB_PATH.stat().st_mtime)
 except Exception as exc:  # for example, the metrics table has not been created yet
     st.error(f"Could not read the database tables ({exc}). Run `python -m src.load` and "
              "`python -m src.metrics` from the repo root.")
@@ -309,8 +311,8 @@ st.sidebar.caption(f"Latest game in data: {played_dates}")
 st.sidebar.caption(f"Rolling window: {WINDOW} games. Pythagorean exponent: {PYTH_EXP}. "
                    "Playoffs are wild card, divisional, conference and Super Bowl games.")
 
-tab_week, tab_pred, tab_standings, tab_trends, tab_log = st.tabs(
-    ["Weekly games", "Predictions", "Standings", "Team trends", "Game log"]
+tab_week, tab_pred, tab_qb, tab_standings, tab_trends, tab_log = st.tabs(
+    ["Weekly games", "Predictions", "QB projections", "Standings", "Team trends", "Game log"]
 )
 
 # ---------------------------------------------------------------- weekly games
@@ -441,6 +443,11 @@ with tab_pred:
             "unplayed regular season week is predicted, and not the first weeks of a season, when teams have "
             "too few games."
         )
+
+# ---------------------------------------------------------------- QB projections
+
+with tab_qb:
+    render_qb_tab(qb_pred, qb_games, games, full, week_label)
 
 # ---------------------------------------------------------------- standings
 

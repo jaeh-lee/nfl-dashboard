@@ -73,3 +73,17 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+# Per-game quarterback stats: the columns the QB projections use.
+QB_STATS_COLUMNS = ["player_id", "player_name", "team", "opponent_team", "season", "week", "season_type",
+                    "game_id", "completions", "attempts", "passing_yards", "passing_tds",
+                    "passing_interceptions", "sacks_suffered", "passing_epa"]
+
+
+def load_qb_stats_pl(seasons: list[int] = SEASONS) -> pl.DataFrame:
+    """One row per quarterback per game, for every QB who threw at least one pass."""
+    df = nfl.load_player_stats(seasons=seasons)
+    df = df.filter((pl.col("position") == "QB") & (pl.col("attempts") > 0))
+    return df.select([c for c in QB_STATS_COLUMNS if c in df.columns])
