@@ -92,6 +92,9 @@ def render_qb_tab(qb_pred: pd.DataFrame, qb_games: pd.DataFrame, pass_def: pd.Da
     ))
     fig.add_trace(go.Scatter(x=[nxt], y=[row["opp_allowed_yards_pg"]], mode="markers", name="Opponent allows (season)",
                              marker=dict(symbol="diamond", size=11, color="black"), showlegend=False))
+    last4 = recent.tail(4)["passing_yards"].mean()            # the QB's last 4 starts
+    fig.add_hline(y=last4, line_dash="dot", line_color="black",
+                  annotation_text=f"Last {min(4, len(recent))} starts avg {last4:.0f}", annotation_position="top left")
     fig.update_layout(title=f"{labels[pid]}: passing yards by game", height=420, yaxis_title="Passing yards",
                       legend=dict(orientation="h", yanchor="top", y=-0.25), margin=dict(t=60, b=40))
     # The QB's chart on the left and the opponent's pass defense, game by game, on the right.
@@ -101,9 +104,10 @@ def render_qb_tab(qb_pred: pd.DataFrame, qb_games: pd.DataFrame, pass_def: pd.Da
     if len(dd) and (dd["defense"] == row["opponent_team"]).any():
         right.plotly_chart(
             defense_chart(dd, row["opponent_team"], full,
-                          title=f"{full(row['opponent_team'])}: passing yards allowed by game"),
+                          title=f"{full(row['opponent_team'])}: passing yards allowed by game", last_n=4),
             width="stretch")
     st.caption("Bars are the quarterback's passing yards. Diamonds are the passing yards that opponent allowed per "
                "game in its other games that season, so a bar above its diamond beat that defense's usual. "
-               "The red bar is the projection with its likely range. On the right, the opponent's passing yards "
-               "allowed in each game, with red bars where it allowed more than that offense usually gets.")
+               "The red bar is the projection with its likely range. The dotted line is the average of his last 4 starts. "
+               "On the right, the opponent's passing yards allowed in each game, with red bars where it allowed "
+               "more than that offense usually gets, and a dotted line for its last 4 games.")

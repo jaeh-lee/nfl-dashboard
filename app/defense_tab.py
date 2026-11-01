@@ -7,12 +7,14 @@ import streamlit as st
 BLUE, RED = "royalblue", "crimson"
 
 
-def defense_chart(dd: pd.DataFrame, defense: str, full, title: str | None = None) -> go.Figure:
+def defense_chart(dd: pd.DataFrame, defense: str, full, title: str | None = None,
+                  last_n: int | None = None) -> go.Figure:
     """Passing yards one defense allowed in each regular season game of a season.
 
     Bars are the yards allowed (red when above what that offense usually gets, blue when below),
     diamonds are what that offense gets in its other games, and the dashed line is the league average.
-    dd must hold a single season.
+    dd must hold a single season. When last_n is given, a dotted line marks the average of the defense's
+    last last_n games.
     """
     d = dd[dd["defense"] == defense].sort_values("gameday")
     league = dd["passing_yards"].mean()
@@ -33,6 +35,11 @@ def defense_chart(dd: pd.DataFrame, defense: str, full, title: str | None = None
     ))
     fig.add_hline(y=league, line_dash="dash", line_color="gray",
                   annotation_text=f"League average {league:.0f}", annotation_position="top left")
+    if last_n and len(d):
+        recent_avg = d["passing_yards"].tail(last_n).mean()
+        fig.add_hline(y=recent_avg, line_dash="dot", line_color="black",
+                      annotation_text=f"Last {min(last_n, len(d))} games avg {recent_avg:.0f}",
+                      annotation_position="top right")
     fig.update_layout(title=title or f"{full(defense)}: passing yards allowed by game", height=420,
                       yaxis_title="Passing yards allowed", yaxis_rangemode="tozero",
                       legend=dict(orientation="h", yanchor="top", y=-0.25), margin=dict(t=60, b=40))
